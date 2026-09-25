@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema LPR/ANPR - Centro de Control Vehicular</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        // Paleta Modo Oscuro
+                        dark: {
+                            bg: '#121212',       // Negro carbón
+                            primary: '#E0E0E0',  // Gris claro
+                            secondary: '#B0B0B0',// Gris medio
+                            divider: '#444444',  // Gris oscuro
+                            accent: '#888888'    // Gris suave
+                        },
+                        // Paleta Modo Claro (Gris Pizarra C2/C4)
+                        light: {
+                            bg: '#2C2C2C',       // Gris pizarra
+                            primary: '#E4E4E4',  // Gris claro
+                            accent1: '#A8DADC',  // Cian claro
+                            accent2: '#FFC1CC',  // Rosa suave
+                            btn: '#B39CD0'       // Lavanda
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Variables y ajustes de tema */
+        :root {
+            --bg-color: #121212;
+            --text-primary: #E0E0E0;
+            --text-secondary: #B0B0B0;
+            --border-color: #444444;
+            --card-bg: #1A1A1A;
+            --accent-btn: #888888;
+        }
+
+        .light-mode {
+            --bg-color: #2C2C2C;
+            --text-primary: #E4E4E4;
+            --text-secondary: #A8DADC;
+            --border-color: #FFC1CC;
+            --card-bg: #363636;
+            --accent-btn: #B39CD0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        .custom-card {
+            background-color: var(--card-bg);
+            border-color: var(--border-color);
+        }
+
+        .custom-btn {
+            background-color: var(--accent-btn);
+        }
+    </style>
+</head>
+<body class="font-sans antialiased min-h-screen flex flex-col">
+
+    <!-- Header / Barra Superior de Navegación -->
+    <header class="border-b px-6 py-4 flex flex-wrap justify-between items-center transition-colors duration-300" style="border-color: var(--border-color); background-color: var(--card-bg);">
+        <div class="flex items-center space-x-3">
+            <div class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></div>
+            <h1 class="text-lg font-bold tracking-wide uppercase">Sistema LPR/ANPR <span class="text-xs font-normal opacity-70">| Control Vehicular On-Premise</span></h1>
+        </div>
+
+        <!-- Menú de Navegación -->
+        <nav class="flex space-x-2 my-2 sm:my-0">
+            <button onclick="switchTab('monitoreo')" id="tab-monitoreo" class="nav-tab px-4 py-2 text-xs font-semibold rounded-md transition custom-btn text-black font-bold">
+                Monitoreo en Vivo
+            </button>
+            <button onclick="switchTab('dashboard')" id="tab-dashboard" class="nav-tab px-4 py-2 text-xs font-semibold rounded-md transition hover:bg-white/10">
+                Métricas & FinOps
+            </button>
+            <button onclick="switchTab('registro')" id="tab-registro" class="nav-tab px-4 py-2 text-xs font-semibold rounded-md transition hover:bg-white/10">
+                Registro Vehicular
+            </button>
+        </nav>
+
+        <!-- Conmutador Modo Oscuro / Modo Claro -->
+        <div class="flex items-center space-x-2">
+            <span class="text-xs opacity-70">Tema:</span>
+            <button onclick="toggleTheme()" class="px-3 py-1 text-xs font-bold rounded border flex items-center space-x-1" style="border-color: var(--border-color);">
+                <span id="theme-icon">🌙 Oscuro</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Contenido Principal -->
+    <main class="flex-1 p-6 max-w-7xl mx-auto w-full">
+
+        <!-- VISTA 1: MONITOREO EN VIVO -->
+        <section id="view-monitoreo" class="space-y-6">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Feed RTSP de Video Simulado -->
+                <div class="lg:col-span-2 custom-card rounded-xl p-4 border relative overflow-hidden flex flex-col justify-between h-96">
+                    <div class="flex justify-between items-center z-10">
+                        <span class="text-xs font-mono bg-black/60 px-2 py-1 rounded">Cámara 01 - Acceso Principal RTSP</span>
+                        <span class="text-xs font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 px-2 py-1 rounded">
+                            Latencia Edge: <strong id="latency-val">1.12s</strong> (&le;1.5s)
+                        </span>
+                    </div>
+
+                    <!-- Representación Visual del Stream -->
+                    <div class="absolute inset-0 flex items-center justify-center bg-black/40">
+                        <div class="text-center space-y-2">
+                            <div class="inline-block border-2 border-emerald-400 bg-emerald-500/10 p-6 rounded-lg relative">
+                                <span class="text-xs font-mono text-emerald-300 block mb-1">ROI Matrícula Detectada (YOLOv8)</span>
+                                <span class="text-3xl font-mono font-extrabold tracking-widest text-white">ABC-123-A</span>
+                                <div class="absolute -top-2 -right-2 bg-emerald-500 text-black text-[10px] font-bold px-1 rounded">96.8%</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-between items-center z-10 text-xs opacity-70">
+                        <span>FPS: 15.0</span>
+                        <span>Resolución: 1080p</span>
+                        <span>Dispositivo: NVIDIA Jetson Orin Nano (8GB)</span>
+                    </div>
+                </div>
+
+                <!-- Panel de Validación Reciente y Console Log -->
+                <div class="space-y-4">
+                    <div class="custom-card rounded-xl p-4 border space-y-3">
+                        <h3 class="text-xs font-bold uppercase tracking-wider opacity-70">Última Lectura Procesada</h3>
+                        <div class="p-4 rounded-lg border text-center space-y-2" style="border-color: var(--border-color); background-color: rgba(0,0,0,0.2);">
+                            <span class="text-2xl font-mono font-bold tracking-widest text-amber-300">ABC-123-A</span>
+                            <div class="inline-block px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                                AUTORIZADO
+                            </div>
+                        </div>
+                        <div class="text-xs space-y-1 opacity-80">
+                            <div class="flex justify-between"><span>Tipo Vehículo:</span> <strong>Particular</strong></div>
+                            <div class="flex justify-between"><span>Hora de Paso:</span> <strong id="clock">2026-09-24 23:45:12</strong></div>
+                            <div class="flex justify-between"><span>Confianza OCR:</span> <strong>96.8%</strong></div>
+                        </div>
+                    </div>
+
+                    <!-- Log JSON en Tiempo Real -->
+                    <div class="custom-card rounded-xl p-4 border font-mono text-[11px] space-y-2">
+                        <span class="text-xs font-bold opacity-70 font-sans block">Log Event Stream (API REST)</span>
+                        <pre class="bg-black/50 p-2 rounded text-emerald-400 overflow-x-auto h-28">
+{
+  "timestamp": "2026-09-24T23:45:12Z",
+  "plate": "ABC-123-A",
+  "confidence": 0.968,
+  "edge_latency_ms": 1120,
+  "status": "AUTHORIZED"
+}</pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- VISTA 2: DASHBOARD DE MÉTRICAS & FINOPS -->
+        <section id="view-dashboard" class="space-y-6 hidden">
+            <!-- KPIs Clave -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="custom-card p-4 rounded-xl border">
+                    <span class="text-xs opacity-70 block">Precisión OCR Diurna</span>
+                    <span class="text-2xl font-bold text-emerald-400">94.2%</span>
+                    <span class="text-[10px] opacity-60 block">Requisito: &ge; 92%</span>
+                </div>
+                <div class="custom-card p-4 rounded-xl border">
+                    <span class="text-xs opacity-70 block">Latencia Media Edge</span>
+                    <span class="text-2xl font-bold text-emerald-400">1.12 s</span>
+                    <span class="text-[10px] opacity-60 block">Requisito: &le; 1.5 s</span>
+                </div>
+                <div class="custom-card p-4 rounded-xl border">
+                    <span class="text-xs opacity-70 block">Disponibilidad 24/7</span>
+                    <span class="text-2xl font-bold text-emerald-400">99.8%</span>
+                    <span class="text-[10px] opacity-60 block">Requisito: &ge; 99.5%</span>
+                </div>
+                <div class="custom-card p-4 rounded-xl border">
+                    <span class="text-xs opacity-70 block">Lecturas Totales / Día</span>
+                    <span class="text-2xl font-bold">1,500</span>
+                    <span class="text-[10px] opacity-60 block">3 Puntos de Control</span>
+                </div>
+            </div>
+
+            <!-- Tabla Resumen FinOps (MXN) -->
+            <div class="custom-card rounded-xl p-6 border space-y-4">
+                <h2 class="text-sm font-bold uppercase tracking-wider">Estructura Presupuestaria Consolidada (PMBOK 7ma Ed. - México)</h2>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-xs text-left border-collapse">
+                        <thead>
+                            <tr class="border-b" style="border-color: var(--border-color);">
+                                <th class="py-2">Componente del Presupuesto</th>
+                                <th class="py-2">Definición</th>
+                                <th class="py-2 text-right">Monto (MXN)</th>
+                                <th class="py-2 text-right">% Total</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-700/40">
+                            <tr>
+                                <td class="py-2">Mano de Obra Directa (OPEX)</td>
+                                <td>512 hrs-hombre @ $150 MXN/h</td>
+                                <td class="text-right">$76,800.00</td>
+                                <td class="text-right">51.82%</td>
+                            </tr>
+                            <tr>
+                                <td class="py-2">Hardware y Licencias (CAPEX)</td>
+                                <td>Equipos Jetson, Cámaras RTSP, Switches</td>
+                                <td class="text-right">$54,700.00</td>
+                                <td class="text-right">36.91%</td>
+                            </tr>
+                            <tr class="font-bold">
+                                <td class="py-2">Costo Base Directo Total</td>
+                                <td>Entregables de la EDT</td>
+                                <td class="text-right">$131,500.00</td>
+                                <td class="text-right">88.73%</td>
+                            </tr>
+                            <tr>
+                                <td class="py-2">Reserva de Contingencia</td>
+                                <td>Known-Unknowns (Matriz de Riesgos EMV)</td>
+                                <td class="text-right">$9,645.00</td>
+                                <td class="text-right">6.51%</td>
+                            </tr>
+                            <tr class="font-bold text-emerald-400">
+                                <td class="py-2">Línea Base de Costos (BAC)</td>
+                                <td class="font-normal">Límite de desempeño de costos</td>
+                                <td class="text-right">$141,145.00</td>
+                                <td class="text-right">95.24%</td>
+                            </tr>
+                            <tr>
+                                <td class="py-2">Reserva de Gestión</td>
+                                <td>Unknown-Unknowns (5% sobre Línea Base)</td>
+                                <td class="text-right">$7,057.25</td>
+                                <td class="text-right">4.76%</td>
+                            </tr>
+                            <tr class="font-extrabold text-sm border-t" style="border-color: var(--border-color);">
+                                <td class="py-3">Presupuesto Total Autorizado</td>
+                                <td>Fondo Total Asignado al Proyecto</td>
+                                <td class="text-right">$148,202.25</td>
+                                <td class="text-right">100.00%</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- VISTA 3: REGISTRO VEHICULAR -->
+        <section id="view-registro" class="space-y-6 hidden">
+            <div class="custom-card rounded-xl p-6 border space-y-4">
+                <div class="flex flex-wrap justify-between items-center gap-4">
+                    <h2 class="text-sm font-bold uppercase tracking-wider">Base de Datos On-Premise de Matrículas</h2>
+                    <input type="text" placeholder="Buscar por placa..." class="px-3 py-1.5 text-xs rounded border bg-transparent w-64" style="border-color: var(--border-color);">
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-xs text-left">
+                        <thead>
+                            <tr class="border-b" style="border-color: var(--border-color);">
+                                <th class="py-2">Placa</th>
+                                <th class="py-2">Tipo Vehículo</th>
+                                <th class="py-2">Propietario / Área</th>
+                                <th class="py-2">Estatus</th>
+                                <th class="py-2 text-right">Último Acceso</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-700/40">
+                            <tr>
+                                <td class="py-2.5 font-mono font-bold text-amber-300">ABC-123-A</td>
+                                <td>Particular</td>
+                                <td>Secretaría de Gobernación</td>
+                                <td><span class="bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded text-[10px] font-bold">AUTORIZADO</span></td>
+                                <td class="text-right">2026-09-24 23:45</td>
+                            </tr>
+                            <tr>
+                                <td class="py-2.5 font-mono font-bold text-amber-300">XYZ-987-B</td>
+                                <td>Transporte Público</td>
+                                <td>Ruta Local 04</td>
+                                <td><span class="bg-rose-500/20 text-rose-300 px-2 py-0.5 rounded text-[10px] font-bold">LISTA NEGRA</span></td>
+                                <td class="text-right">2026-09-24 21:12</td>
+                            </tr>
+                            <tr>
+                                <td class="py-2.5 font-mono font-bold text-amber-300">MNO-456-C</td>
+                                <td>Particular</td>
+                                <td>Visitante General</td>
+                                <td><span class="bg-gray-500/20 text-gray-300 px-2 py-0.5 rounded text-[10px] font-bold">DESCONOCIDO</span></td>
+                                <td class="text-right">2026-09-24 18:30</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t py-4 text-center text-xs opacity-60 transition-colors duration-300" style="border-color: var(--border-color);">
+        Sistema LPR/ANPR On-Premise &copy; 2026 | Desarrollado para Dependencias Gubernamentales
+    </footer>
+
+    <!-- JavaScript Lógico del Prototipo -->
+    <script>
+        // Navegación entre Pestañas
+        function switchTab(tabId) {
+            document.querySelectorAll('main > section').forEach(section => section.classList.add('hidden'));
+            document.getElementById(`view-${tabId}`).classList.remove('hidden');
+
+            document.querySelectorAll('.nav-tab').forEach(btn => {
+                btn.classList.remove('custom-btn', 'text-black', 'font-bold');
+            });
+            document.getElementById(`tab-${tabId}`).classList.add('custom-btn', 'text-black', 'font-bold');
+        }
+
+        // Conmutador Modo Oscuro / Modo Claro
+        let isDark = true;
+        function toggleTheme() {
+            isDark = !isDark;
+            const body = document.body;
+            const icon = document.getElementById('theme-icon');
+
+            if (isDark) {
+                body.classList.remove('light-mode');
+                icon.textContent = '🌙 Oscuro';
+            } else {
+                body.classList.add('light-mode');
+                icon.textContent = '☀️ Claro';
+            }
+        }
+
+        // Reloj Dinámico
+        setInterval(() => {
+            const now = new Date();
+            const str = now.getFullYear() + '-' +
+                String(now.getMonth() + 1).padStart(2, '0') + '-' +
+                String(now.getDate()).padStart(2, '0') + ' ' +
+                String(now.getHours()).padStart(2, '0') + ':' +
+                String(now.getMinutes()).padStart(2, '0') + ':' +
+                String(now.getSeconds()).padStart(2, '0');
+            const clockEl = document.getElementById('clock');
+            if (clockEl) clockEl.textContent = str;
+        }, 1000);
+    </script>
+</body>
+</html>
