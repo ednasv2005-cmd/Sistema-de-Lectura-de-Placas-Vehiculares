@@ -1,0 +1,13 @@
+{
+  "split": "test",
+  "imagenes": 9,
+  "mAP50": 0.995,
+  "mAP50_95": 0.6830005717552888,
+  "precision": 0.9147223409290708,
+  "recall": 1.0,
+  "placas_gt": 11,
+  "tasa_deteccion_iou075": 0.9090909090909091,
+  "iou_promedio_todas": 0.8583961648374095,
+  "iou_promedio_detectadas": 0.8583961648374095,
+  "cumple_RF02_iou_075": true
+}
