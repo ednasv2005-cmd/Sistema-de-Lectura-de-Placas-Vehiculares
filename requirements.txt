@@ -1,0 +1,7 @@
+panel>=1.4
+pandas
+ultralytics
+onnxruntime
+opencv-python
+psutil
+easyocr
