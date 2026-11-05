@@ -1,163 +1,236 @@
-# Prototipo de Detección y Recorte de Placas Vehiculares (LPR/ANPR)
+# Sistema de Lectura de Placas Vehiculares (LPR) — v0.2
 
-**Proyecto:** Sistema de Lectura de Placas — Formulación y Evaluación de Proyectos Informáticos 2026
-**Paquete de trabajo (WBS):** 2.2 — Detección YOLO y ROI de Matrícula
-**Dataset:** Chinese City Parking Dataset (CCPD) — +300,000 imágenes
+Sistema de reconocimiento automático de placas vehiculares (ALPR/LPR) para el control de acceso.
+Detecta la placa en video en tiempo real con **YOLOv8n**, lee los caracteres con **OCR**,
+consulta un **padrón** de vehículos autorizados y registra cada evento en una bitácora auditable.
+Todo se maneja desde una interfaz web hecha en Python con **Panel (HoloViz)**.
 
-Notebook: [`prototipo_deteccion_placas_CCPD.ipynb`](./prototipo_deteccion_placas_CCPD.ipynb)
-
----
-
-## 1. ¿Qué hace este notebook?
-
-Implementa un primer prototipo del pipeline de detección de placas descrito en la Memoria
-Técnica del proyecto:
-
-```
-Imágenes CCPD  →  Modelo YOLO (detección de placa)  →  Placa recortada (ROI)  →  Métricas  →  Visualización
-```
-
-Concretamente:
-
-1. Lee imágenes del dataset CCPD (directo desde el `.tar.xz` o desde una carpeta ya descomprimida).
-2. Parsea las anotaciones (bbox, número de placa, etc.), que en CCPD van embebidas en el
-   nombre de cada archivo, no en un archivo de anotación aparte.
-3. Convierte una muestra al formato que espera Ultralytics YOLO (`images/`, `labels/`, `data.yaml`).
-4. Entrena un detector YOLOv8n de una sola clase (`placa`).
-5. Evalúa el modelo: mAP@0.5, mAP@0.5:0.95, precisión, recall, **IoU promedio** y
-   **tasa de detección**, comparándolas contra los requisitos del proyecto:
-
-   | Requisito | Descripción | Meta |
-   |---|---|---|
-   | RF-01 | Tasa de detección de vehículos/placa | ≥ 95 % |
-   | RF-02 | Localización del ROI de matrícula (IoU) | ≥ 0.75 |
-
-6. Recorta la placa detectada (ROI) de cada imagen de prueba.
-7. Genera visualizaciones (imagen + caja predicha vs. real + placa recortada).
-
-### Alcance y limitación importante
-
-CCPD contiene **placas chinas**. Este notebook se limita a la tarea **geométrica** de
-localizar la placa como objeto (transferible entre países) y **no incluye OCR** (lectura
-de caracteres): eso corresponde al paquete 2.3 del proyecto (RF-03), que requiere un
-dataset de placas mexicanas y queda fuera de este prototipo. La sección final del
-notebook ("Conclusiones y siguientes pasos") detalla esto.
+> **Estado:** prototipo funcional v0.2 (segundo parcial). La versión del primer parcial era una
+> prueba de concepto (PoC) con el dataset CCPD.
 
 ---
 
-## 2. Requisitos
-
-- Python ≥ 3.9
-- GPU recomendada para el entrenamiento (funciona en CPU, pero mucho más lento). Entornos
-  sugeridos: Google Colab (con GPU activada) o Kaggle Notebooks.
-- Dependencias (se instalan en la primera celda del notebook):
-
-  ```bash
-  pip install ultralytics opencv-python-headless matplotlib pandas tqdm scikit-learn
-  ```
-
----
-
-## 3. Obtener el dataset CCPD
-
-Descarga oficial desde el repositorio [`detectRecog/CCPD`](https://github.com/detectRecog/CCPD)
-(enlaces a Google Drive / BaiduYun, archivo `CCPD2019.tar.xz`, ~12 GB).
-
-El notebook admite **dos formas de leerlo**, controladas por el parámetro `DATASET_SOURCE`:
-
-| Modo | Cuándo usarlo | Qué hace |
-|---|---|---|
-| `"tar"` (por defecto) | Tienes el `.tar.xz` descargado y quieres evitar ocupar ~12 GB extra al descomprimir | Lee el archivo **una sola vez, en streaming**, y aplica *reservoir sampling* para tomar una muestra aleatoria de tamaño exacto sin extraer las imágenes no elegidas |
-| `"folder"` | Ya tienes el dataset descomprimido (p. ej. un "Input Dataset" de Kaggle) | Lee directamente de la carpeta con `ccpd_base/`, `ccpd_blur/`, etc. |
-
-Estructura interna esperada del `.tar` / carpeta:
-
-```
-CCPD2019/
-├── ccpd_base/       (imágenes "normales")
-├── ccpd_blur/
-├── ccpd_challenge/
-├── ccpd_db/
-├── ccpd_fn/
-├── ccpd_rotate/
-├── ccpd_tilt/
-└── splits/
-```
+## Tabla de contenido
+1. [Características](#características)
+2. [Arquitectura](#arquitectura)
+3. [Estructura del repositorio](#estructura-del-repositorio)
+4. [Requisitos](#requisitos)
+5. [Instalación y ejecución local](#instalación-y-ejecución-local)
+6. [Configuración (variables de entorno)](#configuración-variables-de-entorno)
+7. [Padrón sintético de prueba](#padrón-sintético-de-prueba)
+8. [Métricas del modelo](#métricas-del-modelo)
+9. [Cambios respecto a la versión del primer parcial](#cambios-respecto-a-la-versión-del-primer-parcial)
+10. [Limitaciones y trabajo futuro](#limitaciones-y-trabajo-futuro)
 
 ---
 
-## 4. Cómo ejecutarlo
-
-1. Abre el notebook en Colab, Kaggle o Jupyter local.
-2. Ejecuta la celda de instalación de dependencias.
-3. En la sección **"2. Parámetros generales"**, ajusta según tu caso:
-
-   | Parámetro | Descripción |
-   |---|---|
-   | `DATASET_SOURCE` | `"tar"` o `"folder"` |
-   | `DATASET_TAR_PATH` | Ruta al `.tar.xz` (si `DATASET_SOURCE = "tar"`) |
-   | `DATASET_DIR` | Carpeta descomprimida (si `DATASET_SOURCE = "folder"`) |
-   | `CCPD_SUBSETS` | Subcarpetas de CCPD a usar (por defecto: base, blur, tilt) |
-   | `SAMPLE_SIZE` | Nº de imágenes de la muestra (por defecto 3,000; súbelo para un modelo más robusto) |
-   | `EPOCHS`, `IMG_SIZE`, `BATCH_SIZE` | Hiperparámetros de entrenamiento |
-   | `YOLO_BASE_MODEL` | Pesos base preentrenados (por defecto `yolov8n.pt`) |
-
-4. Ejecuta el resto de celdas en orden. El notebook se detiene con un error explícito si
-   la ruta configurada no existe.
+## Características
+- Detección de placas en tiempo real desde una webcam, una cámara IP (RTSP/HTTP) o un celular usado como cámara.
+- Lectura de caracteres con OCR (EasyOCR, provisional).
+- Verificación contra el padrón: **AUTORIZADO**, **NO VIGENTE** o **NO AUTORIZADO**.
+- Bitácora de eventos en SQLite con evidencia (fotograma y recorte de la placa), confianza y latencia.
+- Corrección manual de lecturas (queda registrado quién corrigió).
+- Gestión del padrón: alta, edición, baja e importación desde CSV.
+- Autenticación con usuarios y roles (operador / administrador).
+- Privacidad: los rostros se difuminan en la evidencia guardada.
+- Reconexión automática de la cámara y supresión de lecturas duplicadas (cooldown por placa).
 
 ---
 
-## 5. Salidas generadas
+## Arquitectura
 
-Todo se guarda dentro de `WORK_DIR` (por defecto `/content/ccpd_yolo_proto`):
+### Vista de componentes
 
 ```
-WORK_DIR/
-├── images/{train,val,test}/       # imágenes de la muestra, ya en formato YOLO
-├── labels/{train,val,test}/       # etiquetas YOLO (una .txt por imagen)
-├── data.yaml                      # configuración del dataset para Ultralytics
-├── manifest.csv                   # metadatos de cada imagen de la muestra (bbox, placa, etc.)
-├── runs/ccpd_plate_detector/      # checkpoints y logs del entrenamiento (best.pt, results.png, ...)
-├── placas_recortadas/             # ROIs recortados por el modelo entrenado
-├── ejemplos_resultados.png        # panel de ejemplos visuales (predicción vs. ground truth)
-└── resumen_metricas.json          # métricas finales, listas para citar en el reporte
+┌──────────────────────────── Interfaz web (Panel) ─────────────────────────────┐
+│  Monitoreo  │  Historial  │  Padrón  │  Sistema           (lpr/ui/*)           │
+└───────────────────────────────┬───────────────────────────────────────────────┘
+                                │ Contexto / servicios() (singleton compartido)
+        ┌───────────────────────┼─────────────────────────────┐
+        ▼                       ▼                             ▼
+┌───────────────┐      ┌──────────────────┐          ┌──────────────────┐
+│   Camara      │─────▶│   Procesador     │─────────▶│    BaseDatos     │
+│ (hilo, último │frame │ YOLOv8 → OCR →   │ evento   │ SQLite (WAL)     │
+│  fotograma,   │      │ normalizar →     │          │ padron / eventos │
+│  reconexión)  │      │ verificar →      │◀─────────│                  │
+└───────────────┘      │ anonimizar       │ verificar└──────────────────┘
+                       └──────────────────┘
+                                │ imágenes de evidencia
+                                ▼
+                         data/eventos/*.jpg
+```
+
+| Capa | Módulo | Responsabilidad |
+|------|--------|-----------------|
+| Configuración | `lpr/config.py` | Variables de entorno y constantes (umbrales, tamaño de entrada, cooldown). |
+| Servicios | `lpr/servicios.py` | Crea una sola vez `(db, cam, proc)` y los comparte entre sesiones. |
+| Núcleo | `lpr/core/utils.py`, `lpr/core/privacidad.py` | Normalización y validación de placas, ocultar credenciales en URLs, difuminado de rostros. |
+| Datos | `lpr/datos/base_datos.py` | Padrón, eventos, correcciones, resúmenes y consultas filtradas. |
+| Visión | `lpr/vision/camara.py`, `ocr.py`, `procesador.py` | Captura, detección (YOLO ONNX/OpenVINO/PT), OCR y registro del evento. |
+| Interfaz | `lpr/ui/*.py` | Pestañas de la aplicación, barra lateral y estilos. |
+| Entrada | `app_lpr.py` | Inicia el pipeline y levanta el servidor Panel con autenticación. |
+
+### Flujo de una lectura
+1. `Camara` captura de forma continua y guarda solo el último fotograma.
+2. `Procesador` ejecuta YOLOv8n a 640 px y descarta las detecciones con confianza menor a 0.5.
+3. La región de la placa pasa por el OCR. El texto se normaliza (A–Z, 0–9) y se valida el formato.
+4. Si la lectura supera el umbral de OCR (0.6) y no está en cooldown, se consulta el padrón.
+5. Se difuminan los rostros y se guarda la evidencia junto con el evento (resultado, confianzas y latencia).
+6. La interfaz consulta cada 200 ms (video) y cada 1 s (tablas e indicadores).
+
+### Vista de despliegue
+
+```
+ Webcam USB / cámara IP / celular ──USB/RTSP/HTTP──▶ ┌──────────────────────────────┐
+                                                     │ Equipo local (Linux)         │
+ Navegador del operador ◀──────HTTP :5006──────────▶ │  venv + python app_lpr.py    │
+                                                     │  ├─ modelo_placas/           │
+                                                     │  └─ data/ (lpr.db, eventos)  │
+                                                     └──────────────────────────────┘
 ```
 
 ---
 
-## 6. Interpretación de resultados
+## Estructura del repositorio
 
-El notebook compara automáticamente dos métricas contra las metas del proyecto:
+```
+.
+├── app_lpr.py                 # Punto de entrada
+├── requirements.txt
+├── lpr/
+│   ├── config.py
+│   ├── servicios.py
+│   ├── core/       (utils.py, privacidad.py)
+│   ├── datos/      (base_datos.py)
+│   ├── vision/     (camara.py, ocr.py, procesador.py)
+│   └── ui/         (app.py, contexto.py, estilos.py, sidebar.py,
+│                    monitoreo.py, historial.py, padron.py, sistema.py)
+├── scripts/
+│   └── generar_padron.py      # Padrón sintético para pruebas
+├── modelo_placas/             # best.pt / best.onnx / best_openvino_model (no versionado)
+└── data/                      # BD y evidencias (no versionado)
+```
 
-- **Tasa de detección** (a IoU ≥ 0.75): debe acercarse a **RF-01 (≥ 95 %)**.
-- **IoU promedio** en el conjunto de prueba: debe acercarse a **RF-02 (≥ 0.75)**.
-
-Con `SAMPLE_SIZE = 3000` y pocas épocas, es normal que un primer prototipo no alcance
-todavía ambas metas — el objetivo de esta etapa es validar el pipeline completo, no
-entregar el modelo final del paquete 2.2. Para acercarse a las metas:
-
-- Aumentar `SAMPLE_SIZE` (usar más imágenes de CCPD).
-- Aumentar `EPOCHS`.
-- Usar un modelo base más grande (`yolov8s.pt`, `yolov8m.pt`) si hay GPU disponible.
-
----
-
-## 7. Siguientes pasos (fuera de este notebook)
-
-1. Recolectar un **dataset local de placas mexicanas** en condiciones reales (cámaras IP,
-   ángulos, clima) para cumplir RNF-02 y RF-03.
-2. Hacer *fine-tuning* del detector con ese dataset local antes de considerarlo "validado"
-   (entregable del paquete 2.2).
-3. Construir el **módulo OCR** (paquete 2.3, RF-03), tomando como entrada las placas
-   recortadas (`placas_recortadas/`) que genera este notebook.
-4. Medir el tiempo de inferencia por frame en el dispositivo edge real (RF-05: ≤ 1.5 s/frame).
+> `venv/`, `credenciales.json`, `data/`, `*.db` y los pesos del modelo están en `.gitignore`.
 
 ---
 
-## 8. Referencias
+## Requisitos
+- Python 3.10–3.12 con `venv`
+- Linux, Windows o macOS (probado en Fedora 44)
+- 4 GB de RAM como mínimo. No se necesita GPU: la inferencia corre en CPU con ONNX Runtime u OpenVINO.
+- Una cámara: webcam, cámara IP o un celular con una app de cámara IP (por ejemplo *IP Webcam* o *DroidCam*).
+- Los pesos del modelo en `modelo_placas/`. Se obtienen descomprimiendo `modelo_placas.zip`.
 
-- Xu, Z. et al. (2018). *Towards End-to-End License Plate Detection and Recognition: A
-  Large Dataset and Baseline*. ECCV 2018.
-- Repositorio oficial del dataset y formato de anotaciones:
-  [github.com/detectRecog/CCPD](https://github.com/detectRecog/CCPD)
-- [Ultralytics YOLO — Documentación](https://docs.ultralytics.com/)
+---
+
+## Instalación y ejecución local
+
+```bash
+git clone https://github.com/ednasv2005-cmd/Sistema-de-Lectura-de-Placas-Vehiculares.git
+cd Sistema-de-Lectura-de-Placas-Vehiculares
+
+python3 -m venv venv
+source venv/bin/activate          # Windows: venv\Scripts\activate
+pip install --upgrade pip
+pip install -r requirements.txt
+
+# Modelo
+unzip modelo_placas.zip -d modelo_placas   # si no existe la carpeta
+
+# Configuración
+export LPR_FUENTE=0                       # 0 = webcam; o URL de la cámara/celular
+export LPR_USUARIOS="admin:ClaveSegura1"
+export LPR_ADMINS=admin
+
+
+# (Opcional) padrón de prueba
+python scripts/generar_padron.py -n 50 --db
+
+# Ejecutar
+python app_lpr.py
+```
+
+Abre **http://localhost:5006** e inicia sesión con un usuario definido en `LPR_USUARIOS`.
+
+
+## Configuración (variables de entorno)
+
+| Variable | Ejemplo | Descripción |
+|----------|---------|-------------|
+| `LPR_FUENTE` | `0` · `rtsp://usuario:clave@192.168.1.50:554/stream` · `http://192.168.1.70:8080/video` | Índice de la webcam o URL de la cámara o celular. |
+| `LPR_MODELO` | `modelo_placas/best.onnx` | Ruta del modelo (`.pt`, `.onnx` o carpeta OpenVINO). |
+| `LPR_DB` | `data/lpr.db` | Base de datos SQLite. |
+| `LPR_IMAGENES` | `data/eventos` | Carpeta de evidencias. |
+| `LPR_USUARIOS` | `admin:ClaveSegura1,operador:OtraClave2` | Usuarios con su contraseña. |
+| `LPR_USUARIOS_ARCHIVO` | `credenciales.json` | Alternativa a `LPR_USUARIOS`: un archivo JSON. |
+| `LPR_ADMINS` | `admin` | Usuarios con rol de administrador. |
+| `LPR_COOKIE_SECRET` | `[cadena aleatoria]` | Genérala con `python -c "import secrets;print(secrets.token_hex(32))"`. |
+| `LPR_DIRECCION` / `LPR_PUERTO` | `0.0.0.0` / `5006` | Dirección y puerto del servidor. |
+| `LPR_ORIGEN` | `localhost:5006,192.168.1.10:5006` | Orígenes permitidos para el websocket. |
+
+---
+
+## Padrón sintético de prueba
+`scripts/generar_padron.py` genera propietarios ficticios, placas con formato mexicano y vehículos.
+Todos los registros llevan la marca **SINTÉTICO** en `notas`.
+
+```bash
+python scripts/generar_padron.py -n 50 --incluir ABC123D --db   # inserta en la BD
+python scripts/generar_padron.py -n 50                          # solo CSV → data/padron_sintetico.csv
+```
+
+El CSV se puede importar desde la pestaña **Padrón → Importar CSV**. Sus columnas son
+`placa, propietario, vehiculo, vigente, notas`.
+
+---
+
+## Métricas del modelo
+YOLOv8n con una clase (`LicensePlate`) a 640 px. Evaluado en el split de prueba: 9 imágenes con 11 placas.
+
+| Métrica | Valor |
+|---------|-------|
+| mAP@50 | 0.995 |
+| mAP@50-95 | 0.683 |
+| Precisión | 0.915 |
+| Recall | 1.000 |
+| Tasa de detección (IoU ≥ 0.75) | 90.9 % |
+| IoU promedio | 0.858 |
+
+> El conjunto de prueba es pequeño. El intervalo de confianza de Wilson al 95 % para la tasa de
+> detección es de [62 %, 98 %], así que hacen falta más datos para confirmar RF-01.
+
+---
+
+## Cambios respecto a la versión del primer parcial
+
+| Aspecto | Primer parcial (PoC) | v0.2 (actual) |
+|---------|----------------------|---------------|
+| Objetivo | Demostrar la detección de placas | Sistema de control de acceso funcional de principio a fin |
+| Dataset | CCPD (placas chinas) | Placas mexicanas (Roboflow: *License Plates Mexico*, *Placas*) `[COMPLETAR: tamaño/licencia]` |
+| Modelo | Prueba inicial con YOLO | YOLOv8n reentrenado, exportado a ONNX y OpenVINO para CPU |
+| Lectura de caracteres | No incluida | OCR con EasyOCR, normalización y validación del formato |
+| Interfaz | Mockup estático (`index.html`) | App web en Python (Panel) con monitoreo en vivo |
+| Persistencia | Ninguna | SQLite (WAL): padrón y bitácora de eventos con evidencia |
+| Padrón | No existía | Alta, edición, baja, importación CSV y generador sintético |
+| Seguridad | Ninguna | Login, roles (operador/admin) y credenciales fuera del repositorio |
+| Privacidad | No contemplada | Difuminado de rostros en las evidencias |
+| Robustez | Ejecución puntual en notebook | Hilos de captura y procesamiento, reconexión de cámara y cooldown de duplicados |
+| Código | Notebook monolítico | Paquete modular `lpr/` (core, datos, vision, ui) |
+| Despliegue | Google Colab | Ejecución local con entorno virtual (`venv`) y configuración por variables de entorno |
+| Repositorio | Archivos subidos sin control | `.gitignore` y separación de configuración y secretos |
+
+---
+
+## Limitaciones y trabajo futuro
+- **RF-03:** el OCR es provisional (EasyOCR). Falta entrenar o ajustar un OCR específico para placas mexicanas.
+- **RF-04:** falta la API REST para integrarse con sistemas externos.
+- **RNF-05:** la base de datos SQLite no está cifrada. Se planea SQLCipher o PostgreSQL con TLS.
+- El conjunto de prueba es pequeño, y faltan pruebas nocturnas, con ángulos extremos y con placas sucias.
+- Falta integrar el medidor de uso y el estado de cuenta en la interfaz.
+- Contenerizar el sistema (Docker) para facilitar el despliegue en otros equipos.
+
+---
+
+## Autores
+- [Edna Andrea Serrano Vela, David Torres, Gómez] — [COMPLETAR: Formulación y Evaluación de Proyectos Informáticos / Unidad Profesional Interdisciplinaria de Ingeniería Campus Tlaxcala (UPIIT) / Periodo 2027-1]
