@@ -1,0 +1,37 @@
+# Entorno virtual
+venv/
+.venv/
+env/
+
+# Credenciales y configuración local
+.env
+.env.*
+credenciales.json
+*.pem
+*.key
+
+# Datos sensibles generados por el sistema
+data/
+eventos/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite3
+
+# Modelos y datasets pesados
+*.zip
+modelo_placas/
+*.pt
+*.onnx
+*.bin
+
+# Cachés de Python y herramientas
+__pycache__/
+*.pyc
+.ultralytics/
+.EasyOCR/
+
+# IDE y sistema
+.vscode/
+.idea/
+.DS_Store
